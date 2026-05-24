@@ -17,7 +17,12 @@ app = FastAPI(
 class ChatRequest(BaseModel):
     session_id: str
     message: str
-    token_budget: int = 2000
+    token_budget: int = 200
+
+class ClassifiedMessage(BaseModel):
+    role: str
+    content: str
+    type: str
 
 class ChatResponse(BaseModel):
     response: str
@@ -26,6 +31,8 @@ class ChatResponse(BaseModel):
     usage_percent: float
     was_optimized: bool
     optimization_message: Optional[str] = None
+    memory: Optional[str] = None
+    classified_messages: Optional[list[ClassifiedMessage]] = None
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
@@ -34,8 +41,10 @@ async def chat(request: ChatRequest):
     messages = session["messages"]
     token_budget = session["token_budget"]
 
+    # add user message
     messages.append({"role": "user", "content": request.message, "type": "unknown"})
 
+    # call Claude
     claude_messages = [
         {"role": m["role"], "content": m["content"]}
         for m in messages
@@ -57,6 +66,7 @@ async def chat(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    # add Claude response
     messages.append({
         "role": "assistant",
         "content": response_text,
@@ -66,14 +76,20 @@ async def chat(request: ChatRequest):
     session["messages"] = messages
     save_session(request.session_id, session)
 
+    # count tokens after full exchange
     tokens_used = count_tokens_estimate(messages)
     usage_percent = round(min(tokens_used / token_budget * 100, 100), 1)
 
+    # optimize if over 70%
     was_optimized = False
     optimization_message = None
+    memory = None
+    classified_messages = None
 
     if usage_percent >= 70:
-        messages, optimization_message = await optimize_conversation(messages, token_budget)
+        messages, optimization_message, memory, classified = await optimize_conversation(
+            messages, token_budget
+        )
         save_session(request.session_id, {
             "messages": messages,
             "token_budget": token_budget
@@ -81,6 +97,14 @@ async def chat(request: ChatRequest):
         tokens_used = count_tokens_estimate(messages)
         usage_percent = round(min(tokens_used / token_budget * 100, 100), 1)
         was_optimized = True
+        classified_messages = [
+            ClassifiedMessage(
+                role=m["role"],
+                content=m["content"],
+                type=m.get("type", "unknown")
+            )
+            for m in classified
+        ]
 
     return ChatResponse(
         response=response_text,
@@ -88,5 +112,7 @@ async def chat(request: ChatRequest):
         token_budget=token_budget,
         usage_percent=usage_percent,
         was_optimized=was_optimized,
-        optimization_message=optimization_message
+        optimization_message=optimization_message,
+        memory=memory,
+        classified_messages=classified_messages
     )
