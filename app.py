@@ -3,7 +3,7 @@ import requests
 import uuid
 
 # Config
-API_URL = "http://localhost:8000/chat"
+API_URL = "https://context-optimizer.onrender.com/chat"
 TOKEN_BUDGET = 200
 
 # Page Setup
