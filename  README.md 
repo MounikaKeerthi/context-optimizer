@@ -1,0 +1,52 @@
+# Context Optimizer
+
+A FastAPI service that automatically manages token usage for LLM-powered chatbots.
+Instead of hitting context limits mid-conversation, this service runs silently in the background,
+optimizes the conversation history when approaching the token budget, and keeps the chat going seamlessly.
+
+## The Problem
+
+Every LLM API has a token limit. As conversations grow longer, costs increase and eventually
+the context window fills up. Most solutions require users to manually compress their history
+(like Claude's `/compact`). This service does it automatically.
+
+## How It Works
+
+```
+User sends message
+        ↓
+Service tracks token usage
+        ↓
+Under 70% → send to Claude normally
+Over 70%  → two agents run in parallel:
+              classifier_agent → labels every message (fact, chatter, decision...)
+              summarizer_agent → summarizes oldest messages
+            eviction_agent removes chatter, injects summary
+        ↓
+Claude responds with optimized context
+        ↓
+User never hits the token limit
+```
+
+## Tech Stack
+
+- **FastAPI** — async REST API
+- **Anthropic Claude API** — LLM + token counting
+- **Multi-agent architecture** — classifier and summarizer run in parallel with asyncio.gather()
+- **Python 3.9+**
+
+## Project Structure
+
+```
+context-optimizer/
+    main.py        ← FastAPI app + /chat endpoint
+    agents.py      ← classifier_agent, summarizer_agent
+    optimizer.py   ← eviction_agent, optimize_conversation
+    session.py     ← session storage and token counting
+    app.py         ← Streamlit UI (coming soon)
+    requirements.txt
+```
+
+## Author
+
+Mounika Keerthi
